@@ -1,2 +1,2 @@
 # YOLO_v3
-This implementation of YOLO v3 with TensorFlow
+This repository has not been completed yet
