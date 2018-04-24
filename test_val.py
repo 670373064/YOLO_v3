@@ -24,10 +24,7 @@ class detector(object):
         self.box_per_cell = cfg.BOX_PER_CELL
 
         self.threshold = cfg.THRESHOLD
-        self.anchor = np.shape(cfg.ANCHOR, [-1,2])
-
-        self.offset = np.reshape(np.array([np.arange(grid_shape[1])] * grid_shape[2] * self.box_per_cell), [grid_shape[1], grid_shape[1], self.box_per_cell])
-        self.offset = np.transpose(self.offset, (1, 2, 0))
+        self.anchor = np.reshape(cfg.ANCHOR, [-1,2])
 
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
@@ -65,19 +62,23 @@ class detector(object):
 
     def calc_output(self, output, anchor):
         grid_shape = output.shape
-        output = np.reshape(output, [grid_shape[1], grid_shape[2], self.box_per_cell, self.num_class+5])
+        output = np.reshape(output, [grid_shape[1], grid_shape[2], self.box_per_cell, self.num_classes+5])
         coordinate = np.reshape(output[:, :, :, :4], [grid_shape[1], grid_shape[2], self.box_per_cell, 4])
         confidence = np.reshape(output[:, :, :, 4], [grid_shape[1], grid_shape[2], self.box_per_cell])
-        classes = np.reshape(output[:, :, :, 5:], [ grid_shape[1], grid_shape[2], self.box_per_cell, self.num_class])
+        classes = np.reshape(output[:, :, :, 5:], [ grid_shape[1], grid_shape[2], self.box_per_cell, self.num_classes])
 
-        boxes1 = np.stack([(1.0 / (1.0 + np.exp(-1.0 * coordinate[:, :, :, 0])) + self.offset) / grid_shape[1],
-                           (1.0 / (1.0 + np.exp(-1.0 * coordinate[:, :, :, 1])) + np.transpose(self.offset, (1, 0, 2)))/ grid_shape[2],
+        offset = np.reshape(np.array([np.arange(grid_shape[1])] * grid_shape[2] * self.box_per_cell),
+                                 [grid_shape[1], grid_shape[1], self.box_per_cell])
+        offset = np.transpose(offset, (1, 2, 0))
+
+        boxes1 = np.stack([(1.0 / (1.0 + np.exp(-1.0 * coordinate[:, :, :, 0])) + offset) / grid_shape[1],
+                           (1.0 / (1.0 + np.exp(-1.0 * coordinate[:, :, :, 1])) + np.transpose(offset, (1, 0, 2)))/ grid_shape[2],
                            np.exp(coordinate[:, :, :, 2]) * anchor[:, 0] / grid_shape[1],
                            np.exp(coordinate[:, :, :, 3]) * anchor[:, 1] / grid_shape[2]])
         coordinate = np.transpose(boxes1, (1, 2, 3, 0)) * self.image_size
-        confidence = 1.0 / (1.0 + np.exp(-1.0 * box_confidence))
-        confidence = np.tilt(np.expand_dims(confidence, axis = 3), (1, 1, 1, self.num_classes))
-        classes = 1.0 / (1.0 + np.exp(-1.0 * box_classes))
+        confidence = 1.0 / (1.0 + np.exp(-1.0 * confidence))
+        confidence = np.tile(np.expand_dims(confidence, axis = 3), (1, 1, 1, self.num_classes))
+        classes = 1.0 / (1.0 + np.exp(-1.0 * classes))
 
         box_scores = confidence * classes
 
@@ -104,7 +105,7 @@ class detector(object):
             if probs_filter[i] == 0:
                 continue
             for j in range(i+1, len(probs_filter)):
-                if self.calc_iou(boxes_filter[i], boxes_filter[j]) > 0.5
+                if self.calc_iou(boxes_filter[i], boxes_filter[j]) > 0.5:
                     probs_filter[j] = 0
         
         filter_probs = np.array(probs_filter > 0, dtype = 'bool')
@@ -163,10 +164,10 @@ class detector(object):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', default = 'yolo_v3.ckpt', type = str)
-    parser.add_argument('--weigths_dir', default = 'output', type = str)
+    parser.add_argument('--weights', default = 'yolov3.ckpt', type = str)
+    parser.add_argument('--weights_dir', default = 'output', type = str)
     parser.add_argument('--data_dir', default = 'data', type = str)
-    parser.add_argument('--gpu', default = '', type = str)
+    parser.add_argument('--gpu', default = '0', type = str)
     args = parser.parse_args()
 
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
@@ -175,7 +176,7 @@ def main():
     yolov3 = yolo_v3()
     detect = detector(yolov3, weights_file)
 
-    image_name = ''
+    image_name = './test/01.jpg'
     detect.image_detect(image_name)
 
 if __name__ == '__main__':

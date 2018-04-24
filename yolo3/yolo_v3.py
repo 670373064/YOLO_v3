@@ -182,30 +182,35 @@ class yolo_v3(object):
 
 
     def conv_layer(self, input, filter, size, stride = 1, batch_norm = True, idx = 0):
-        channel = input.shape[3]
-        weight = tf.Variable(tf.truncated_normal([filter, filter, channel, size], stddev = 0.1, name = 'weights'))
-        biases = tf.Variable(tf.constant(0.1, shape = [size], name = 'biases'))
-        conv = tf.nn.conv2d(input, weight, strides = [1, stride, stride, 1], padding = 'SAME', name = str(idx)+'_conv')
+        with tf.variable_scope('convolutional'+str(idx)):
+            channel = int(input.shape[3])
+            weight = tf.Variable(tf.truncated_normal([filter, filter, channel, size], stddev=0.1, name='weights'))
+            biases = tf.Variable(tf.constant(0.1, shape=[size], name='biases'))
+            conv = tf.nn.conv2d(input, weight, strides=[1, stride, stride, 1], padding='SAME')
 
-        if batch_norm:
-            depth = conv.shape[3]
-            scale = tf.Variable(tf.ones([depth,], dtype = 'float32'), name = 'scale')
-            shift = tf.Variable(tf.zeros([depth,], dtype = 'float32'), name = 'shift')
-            mean = tf.Variable(tf.ones([depth,], dtype = 'float32'), name = 'rolling_mean')
-            variance = tf.Variable(tf.ones([depth,], dtype = 'float32'), name = 'rolling_variance')
+            if batch_norm:
+                with tf.variable_scope('BatchNorm'):
+                    depth = conv.shape[3]
+                    scale = tf.Variable(tf.ones([depth, ], dtype='float32'), name='beta')
+                    shift = tf.Variable(tf.zeros([depth, ], dtype='float32'))#, name='shift')
+                    mean = tf.Variable(tf.ones([depth, ], dtype='float32'), name='moving_mean')
+                    variance = tf.Variable(tf.ones([depth, ], dtype='float32'), name='moving_variance')
 
-            conv = tf.nn.batch_normalization(conv, mean, variance, shift, scale, 1e-05)
-        
-        conv = tf.add(conv, biases)
+                    conv = tf.nn.batch_normalization(conv, mean, variance, shift, scale, 1e-05, name='BatchNorm')
+
+            conv = tf.add(conv, biases)
 
         return tf.maximum(self.alpha * conv, conv)
 
 
     def upsampling(self, input, size = 2, idx = 1):
         shape = input.shape
-        net_transfer = tf.reshape(input, [shape[0], shape[1], 1, shape[2], 1, shape[3]])
+        heights = int(shape[1])
+        widths = int(shape[2])
+        channels = int(shape[3])
+        net_transfer = tf.reshape(input, [-1, heights, 1, widths, 1, channels])
         net_transfer = tf.tile(net_transfer, (1, 1, size, 1, size, 1))
-        net_transfer = tf.reshape(net_transfer, [shape[0], shape[1]*size, shape[2]*size, shape[3]])
+        net_transfer = tf.reshape(net_transfer, [-1, heights*size, widths*size, channels])
 
         return net_transfer
 
