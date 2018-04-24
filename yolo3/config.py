@@ -1,6 +1,8 @@
 # -*- coding:utf-8 -*-
 
-WEIGHTS_FILE = ''
+DATA_DIR = 'data'
+WEIGHTS_FILE = 'output'
+WEIGHTS = 'yolo_V3.ckpt'
 
 CLASSES = []
 
@@ -10,6 +12,16 @@ IMAGE_SIZE = 416
 BOX_PER_CELL = 3
 BATCH_SIZE = 32
 
+LEARNING_RATE = 0.0001
+
+MAX_STEP = 10000
+SAVE_ITER = 50
+SUMMARY_ITER = 5
+
 ALPHA = 0.1
+DECAY_STEP = 30000
+DECAY_RATE = 0.1
+
+GPU = ''
 
 THRESHOLD = 0.3

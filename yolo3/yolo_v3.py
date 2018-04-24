@@ -9,7 +9,7 @@ import numpy as np
 import yolo3.config as cfg
 
 class yolo_v3(object):
-    def __init__(self):
+    def __init__(self, is_training = True):
         self.weights_file = cfg.WEIGHTS_FILE
         self.classes = cfg.CLASSES
         self.num_class = len(self.classes)
@@ -22,6 +22,11 @@ class yolo_v3(object):
 
         self.images = tf.placeholder(tf.float32, [None, self.image_size, self.image_size, 3], name = 'images')
         self.logits = self.yolo_net(self.images)
+
+        if is_training:
+            self.labels = tf.placeholder(tf.float32, [None, None, None, None, None])
+            self.total_loss = self.loss_layer(self.logits, self.labels)
+            #tf.summary.scalar('total_loss', self.total_loss)
         
     def yolo_net(self, input):
         net = self.conv_layer(input, 3, 32, idx = 0)
@@ -233,3 +238,5 @@ class yolo_v3(object):
         box_coor_trans = tf.transpose(boxes1, (1, 2, 3, 4, 0))
         box_confidence = 1.0 / (1.0 + tf.exp(-1.0 * box_confidence))
         box_classes = 1.0 / (1.0 + tf.exp(-1.0 * box_classes))
+
+        return None
