@@ -41,15 +41,14 @@ class detector(object):
         image = np.reshape(image, [1, self.image_size, self.image_size, 3])
         output = self.sess.run(self.yolov3.logits, feed_dict = {self.yolov3.images: image})
 
+        boxes, probs, class_ind = [], [], []
         for i in range(0, 3):
-            _boxes, _probs = self.calc_output(output[i], self.anchor[6-3*i: 9-3*i])
-            if i == 0:
-                boxes, probs = _boxes, _probs
-            else:
-                boxes = np.concatenate([boxes, _boxes], axis = 0)
-                probs = np.concatenate([probs, _probs], axis = 0)
+            _boxes, _probs, _classes = self.calc_output(output[i], self.anchor[6-3*i: 9-3*i])
+            boxes.append(_boxes)
+            probs.append(_probs)
+            class_ind.append(_classes)
 
-        result = self.calc_object(boxes, probs)
+        result = self.calc_object(boxes, probs, class_ind)
 
         for i in range(len(result)):
             result[i][1] *= (1.0 * img_w / self.image_size)
@@ -61,20 +60,21 @@ class detector(object):
 
 
     def calc_output(self, output, anchor):
-        grid_shape = output.shape
-        output = np.reshape(output, [grid_shape[1], grid_shape[2], self.box_per_cell, self.num_classes+5])
-        coordinate = np.reshape(output[:, :, :, :4], [grid_shape[1], grid_shape[2], self.box_per_cell, 4])
-        confidence = np.reshape(output[:, :, :, 4], [grid_shape[1], grid_shape[2], self.box_per_cell])
-        classes = np.reshape(output[:, :, :, 5:], [ grid_shape[1], grid_shape[2], self.box_per_cell, self.num_classes])
+        grid_h, grid_w = output.shape[1:3]
+        output = np.reshape(output, [grid_h, grid_w, self.box_per_cell, self.num_classes+5])
+        coordinate = np.reshape(output[:, :, :, :4], [grid_h, grid_w, self.box_per_cell, 4])
+        confidence = np.reshape(output[:, :, :, 4], [grid_h, grid_w, self.box_per_cell])
+        classes = np.reshape(output[:, :, :, 5:], [grid_h, grid_w, self.box_per_cell, self.num_classes])
 
-        offset = np.reshape(np.array([np.arange(grid_shape[1])] * grid_shape[2] * self.box_per_cell),
-                                 [grid_shape[1], grid_shape[1], self.box_per_cell])
-        offset = np.transpose(offset, (1, 2, 0))
+        col = np.reshape(np.tile(np.arange(0, grid_w), grid_w), [grid_h, grid_w, 1, 1])
+        row = np.reshape(np.tile(np.reshape(np.arange(0, grid_h), [-1, 1]), grid_h), [grid_h, grid_w, 1, 1])
+        col = np.tile(col, (1, 1, 3, 1))
+        row = np.tile(row, (1, 1, 3, 1))
 
-        boxes1 = np.stack([(1.0 / (1.0 + np.exp(-1.0 * coordinate[:, :, :, 0])) + offset) / grid_shape[1],
-                           (1.0 / (1.0 + np.exp(-1.0 * coordinate[:, :, :, 1])) + np.transpose(offset, (1, 0, 2)))/ grid_shape[2],
-                           np.exp(coordinate[:, :, :, 2]) * anchor[:, 0] / grid_shape[1],
-                           np.exp(coordinate[:, :, :, 3]) * anchor[:, 1] / grid_shape[2]])
+        boxes1 = np.stack([(1.0 / (1.0 + np.exp(-1.0 * coordinate[:, :, :, 0])) + col) / grid_w,
+                           (1.0 / (1.0 + np.exp(-1.0 * coordinate[:, :, :, 1])) + row) / grid_h,
+                           np.exp(coordinate[:, :, :, 2]) * anchor[:, 0] / self.image_size,
+                           np.exp(coordinate[:, :, :, 3]) * anchor[:, 1] / self.image_size])
         coordinate = np.transpose(boxes1, (1, 2, 3, 0)) * self.image_size
         confidence = 1.0 / (1.0 + np.exp(-1.0 * confidence))
         confidence = np.tile(np.expand_dims(confidence, axis = 3), (1, 1, 1, self.num_classes))
@@ -82,37 +82,52 @@ class detector(object):
 
         box_scores = confidence * classes
 
-        coordinate = np.reshape(coordinate, [-1, 4])
-        box_scores = np.reshape(box_scores, [-1, self.num_classes])
+        box_classes = np.argmax(box_scores, axis = -1)
+        box_score_max = np.max(box_scores, axis = -1)
+        filter_index = np.where(box_score_max >= self.threshold)
 
-        return coordinate, box_scores
+        boxes_filter = coordinate[filter_index]
+        probs_filter = box_score_max[filter_index]
+        class_filter = box_classes[filter_index]
+
+        return boxes_filter, probs_filter, class_filter
 
 
-    def calc_object(self, boxes, probs):
-        filter_probs = np.array(probs >= self.threshold, dtype = 'bool')
-        filter_index = np.nonzero(filter_probs)
+    def calc_object(self, boxes, probs, class_idx):
+        boxes = np.concatenate(boxes)
+        probs = np.concatenate(probs)
+        class_idx = np.concatenate(class_idx)
 
-        boxes_filter = boxes[filter_index]
-        probs_filter = probs[filter_index]
-        class_filter = np.argmax(filter_probs, axis = 1)[filter_index]
+        _boxes, _probs, _class_idx = [], [], []
+        for c in set(class_idx):
+            index = np.where(class_idx == c)
+            boxes_filter = boxes[index]
+            probs_filter = probs[index]
+            class_filter = class_idx[ind]
+            
+            sort_num = np.array(np.argsort(probs_filter))[::-1]
+            boxes_filter = boxes_filter[sort_num]
+            probs_filter = probs_filter[sort_num]
+            class_filter = class_filter[sort_num]
 
-        sort_num = np.array(np.argsort(probs_filter))[::-1]
-        boxes_filter = boxes_filter[sort_num]
-        probs_filter = probs_filter[sort_num]
-        class_filter = class_filter[sort_num]
-
-        for i in range(len(probs_filter)):
-            if probs_filter[i] == 0:
-                continue
-            for j in range(i+1, len(probs_filter)):
-                if self.calc_iou(boxes_filter[i], boxes_filter[j]) > 0.5:
-                    probs_filter[j] = 0
+            for i in range(len(probs_filter)):
+                if probs_filter[i] == 0:
+                    continue
+                for j in range(i+1, len(probs_filter)):
+                    if self.calc_iou(boxes_filter[i], boxes_filter[j]) > 0.5:
+                        probs_filter[j] = 0
         
-        filter_probs = np.array(probs_filter > 0, dtype = 'bool')
-        boxes_filter = boxes_filter[filter_probs]
-        probs_filter = probs_filter[filter_probs]
-        class_filter = class_filter[filter_probs]
+            filter_probs = np.array(probs_filter > 0, dtype = 'bool')
+            boxes_filter = boxes_filter[filter_probs]
+            probs_filter = probs_filter[filter_probs]
+            class_filter = class_filter[filter_probs]
+            _boxes.append(boxes_filter)
+            _probs.append(probs_filter)
+            _class_idx.append(class_filter)
 
+        boxes_filter = np.concatenate(_boxes)
+        probs_filter = np.concatenate(_probs)
+        class_filter = np.concatenate(_class_idx)
         results = []
         for i in range(len(probs_filter)):
             results.append(self.classes[class_filter[i], boxes_filter[i][0], boxes_filter[i][1], boxes_filter[i][2], boxes_filter[i][3], probs_filter[i]])

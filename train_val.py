@@ -10,6 +10,7 @@ import argparse
 import datetime
 import time
 import os
+import cv2
 
 import yolo3.config as cfg
 from yolo3.yolo_v3 import yolo_v3
@@ -43,8 +44,8 @@ class Train(object):
         self.sess.run(tf.global_variables_initializer())
 
         print('Restore weights from: ', weights_file)
-        self.saver.restore(self.sess, weights_file)
-        self.writer.add_graph(self.ses.graph)
+        #self.saver.restore(self.sess, weights_file)
+        self.writer.add_graph(self.sess.graph)
         #self.saver = tf.train.Saver(self.variable_to_restore)
 
     def train(self):
@@ -56,9 +57,12 @@ class Train(object):
 
         for step in range(0, self.max_step + 1):
             images, labels = None, None
-            feed_dict = {self.yolov3.images: images, self.yolov3.labels: labels}
+            images = cv2.imread('./test/01.jpg')
+            images = cv2.resize(images, (416,416))
+            images = np.reshape(images, [1, 416, 416, 3])
+            feed_dict = {self.yolov3.images: images}#, self.yolov3.labels: labels}
 
-            if step % self.summary_iter == 0:
+            '''if step % self.summary_iter == 0:
                 if step % (self.summary_iter * 10) == 0:
                     summary_, loss, _ = self.sess.run([self.summary_op, self.yolov3.total_loss, self.train_op], feed_dict = feed_dict)
 
@@ -78,10 +82,11 @@ class Train(object):
                 self.writer.add_summary(summary_, step)
 
             else:
-                self.sess.run(self.train_op, feed_dict = feed_dict)
+                self.sess.run(self.train_op, feed_dict = feed_dict)'''
 
             if step % self.saver_iter == 0:
-                self.saver.save(self.sess, self.output_dir + 'yolo_v3.ckpt', global_step = step)
+                self.saver.save(self.sess, self.output_dir + '/yolo_v3.ckpt', global_step = step)
+                print('asdf')
 
 
     def remain(self, step, start):
@@ -93,7 +98,7 @@ class Train(object):
         return str(datetime.timedelta(seconds = int(remain_time)))
 
 
-def main()：
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', default = 'yolo_v3.ckpt', type = str)
     parser.add_argument('--gpu', default = '', type = str)
