@@ -12,21 +12,22 @@ DATA_DIR = 'data'
 WEIGHTS_FILE = 'output'
 WEIGHTS = 'yolo_V3.ckpt'
 
-'''CLASSES = ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus',
+CLASSES = ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus',
            'car', 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse',
            'motorbike', 'person', 'pottedplant', 'sheep', 'sofa',
-           'train', 'tvmonitor']'''
-CLASSES = get_classes_names()
+           'train', 'tvmonitor']
+#CLASSES = get_classes_names()
 
 ANCHOR = [10, 13, 16, 30, 33, 23, 30, 61, 62, 45, 59, 119, 116, 90, 156, 198, 373, 326]
 
 IMAGE_SIZE = 416
 BOX_PER_CELL = 3
-BATCH_SIZE = 32
+CELL_SIZE = 13
+BATCH_SIZE = 10
 
-LEARNING_RATE = 0.0001
+LEARNING_RATE = 0.002
 
-MAX_STEP = 10000
+MAX_STEP = 200000
 SAVE_ITER = 50
 SUMMARY_ITER = 5
 
@@ -36,4 +37,4 @@ DECAY_RATE = 0.1
 
 GPU = ''
 
-THRESHOLD = 0.3
+THRESHOLD = 0

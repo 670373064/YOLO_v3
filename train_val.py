@@ -10,14 +10,15 @@ import argparse
 import datetime
 import time
 import os
-import cv2
 
 import yolo3.config as cfg
 from yolo3.yolo_v3 import yolo_v3
+from pascal_voc import Pascal_voc
 
 class Train(object):
-    def __init__(self, yolo3):
+    def __init__(self, yolo3, pascal_voc):
         self.yolov3 = yolo3
+        self.data = pascal_voc
         self.num_classes = len(cfg.CLASSES)
         self.init_learn_rate = cfg.LEARNING_RATE
         self.max_step = cfg.MAX_STEP
@@ -27,7 +28,7 @@ class Train(object):
         weights_file = os.path.join(self.output_dir, cfg.WEIGHTS)
 
         self.variable_to_restore = tf.global_variables()
-        self.saver = tf.train.Saver(self.variable_to_restore)
+        #self.saver = tf.train.Saver(self.variable_to_restore[:-60])
         self.summary_op = tf.summary.merge_all()
         self.writer = tf.summary.FileWriter(self.output_dir)
 
@@ -46,34 +47,31 @@ class Train(object):
         print('Restore weights from: ', weights_file)
         #self.saver.restore(self.sess, weights_file)
         self.writer.add_graph(self.sess.graph)
-        #self.saver = tf.train.Saver(self.variable_to_restore)
+        self.saver = tf.train.Saver(self.variable_to_restore)
 
     def train(self):
-        labels_train = None
-        labels_test = None
+        labels_train = self.data.load_labels('train')
+        labels_test = self.data.load_labels('test')
 
         group_num = 10
         init_time = time.time()
 
         for step in range(0, self.max_step + 1):
-            images, labels = None, None
-            images = cv2.imread('./test/01.jpg')
-            images = cv2.resize(images, (416,416))
-            images = np.reshape(images, [1, 416, 416, 3])
-            feed_dict = {self.yolov3.images: images}#, self.yolov3.labels: labels}
+            images, labels = self.data.next_batches(labels_train)
+            feed_dict = {self.yolov3.images: images, self.yolov3.label1: labels[0], self.yolov3.label2: labels[1], self.yolov3.label3: labels[2]}
 
-            '''if step % self.summary_iter == 0:
+            if step % self.summary_iter == 0:
                 if step % (self.summary_iter * 10) == 0:
                     summary_, loss, _ = self.sess.run([self.summary_op, self.yolov3.total_loss, self.train_op], feed_dict = feed_dict)
 
                     sum_loss = 0
                     for i in range(group_num):
-                        images_t, labels_t = None, None
-                        feed_dict_t = {self.yolov3.images: images_t, self.yolov3.labels: labels_t}
+                        images_t, labels_t = self.data.next_batches_test(labels_test)
+                        feed_dict_t = {self.yolov3.images: images_t, self.yolov3.label1: labels_t[0], self.yolov3.label2: labels_t[1], self.yolov3.label3: labels_t[2]}
                         loss_t = self.sess.run(self.yolov3.total_loss, feed_dict = feed_dict_t)
                         sum_loss += loss_t
             
-                    log_str = ('{} Epoch:{}, step:{}, train_loss:{:.4f},test_loss:{:.4f}, remain:{}').format(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, step, loss, sum_loss/group_num, self.remain(step, init_time))
+                    log_str = ('{} Epoch:{}, step:{}, train_loss:{:.4f}, test_loss:{:.4f}, remain:{}').format(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), self.data.epoch, step, loss, sum_loss/group_num, self.remain(step, init_time))
                     print(log_str)
 
                 else:
@@ -82,11 +80,10 @@ class Train(object):
                 self.writer.add_summary(summary_, step)
 
             else:
-                self.sess.run(self.train_op, feed_dict = feed_dict)'''
+                self.sess.run(self.train_op, feed_dict = feed_dict)
 
             if step % self.saver_iter == 0:
                 self.saver.save(self.sess, self.output_dir + '/yolo_v3.ckpt', global_step = step)
-                print('asdf')
 
 
     def remain(self, step, start):
@@ -100,8 +97,8 @@ class Train(object):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', default = 'yolo_v3.ckpt', type = str)
-    parser.add_argument('--gpu', default = '', type = str)
+    parser.add_argument('--weights', default = 'yolov3.ckpt', type = str)
+    parser.add_argument('--gpu', default = '1', type = str)
     args = parser.parse_args()
 
     if args.weights is not None:
@@ -113,8 +110,9 @@ def main():
     os.environ['CUDA_VISIBLE_DEVICES'] = cfg.GPU
 
     yolo3 = yolo_v3()
+    pascal_voc = Pascal_voc()
 
-    train = Train(yolo3)
+    train = Train(yolo3, pascal_voc)
 
     print('start training ....')
     train.train()

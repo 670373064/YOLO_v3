@@ -37,7 +37,7 @@ class detector(object):
         img_h, img_w, _ = image.shape
         image = cv2.resize(image, (self.image_size, self.image_size))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
-        image = image / 255.0 * 2.0 - 1.0
+        image = image / 255.0# * 2.0 - 1.0
         image = np.reshape(image, [1, self.image_size, self.image_size, 3])
         output = self.sess.run(self.yolov3.logits, feed_dict = {self.yolov3.images: image})
 
@@ -48,13 +48,24 @@ class detector(object):
             probs.append(_probs)
             class_ind.append(_classes)
 
+        for i in range(len(boxes)):
+            boxes1 = boxes[i] * [img_w, img_h, img_w, img_h]
+            for j in range(len(boxes1)):
+                boxes[i][j][0] -= boxes1[j][2] * 0.5
+                boxes[i][j][1] -= boxes1[j][3] * 0.5
+                boxes[i][j][0] += boxes1[j][2] * 0.5
+                boxes[i][j][1] += boxes1[j][3] * 0.5
+
+        print(np.shape(boxes))
+        print(probs)
+        print(class_ind)
         result = self.calc_object(boxes, probs, class_ind)
 
-        for i in range(len(result)):
-            result[i][1] *= (1.0 * img_w / self.image_size)
-            result[i][2] *= (1.0 * img_w / self.image_size)
-            result[i][3] *= (1.0 * img_w / self.image_size)
-            result[i][4] *= (1.0 * img_w / self.image_size)
+        '''for i in range(len(result)):
+            result[i][1] *= (1.0 * img_w)
+            result[i][2] *= (1.0 * img_h)
+            result[i][3] *= (1.0 * img_w)
+            result[i][4] *= (1.0 * img_h)'''
 
         return result
 
@@ -65,26 +76,34 @@ class detector(object):
         coordinate = np.reshape(output[:, :, :, :4], [grid_h, grid_w, self.box_per_cell, 4])
         confidence = np.reshape(output[:, :, :, 4], [grid_h, grid_w, self.box_per_cell])
         classes = np.reshape(output[:, :, :, 5:], [grid_h, grid_w, self.box_per_cell, self.num_classes])
+        print(confidence[3, 3, 0])
+        print(classes[3, 3, 0, :])
 
-        col = np.reshape(np.tile(np.arange(0, grid_w), grid_w), [grid_h, grid_w, 1, 1])
-        row = np.reshape(np.tile(np.reshape(np.arange(0, grid_h), [-1, 1]), grid_h), [grid_h, grid_w, 1, 1])
-        col = np.tile(col, (1, 1, 3, 1))
-        row = np.tile(row, (1, 1, 3, 1))
+        col = np.reshape(np.tile(np.arange(0, grid_w), grid_w), [grid_h, grid_w, 1])
+        row = np.reshape(np.tile(np.reshape(np.arange(0, grid_h), [-1, 1]), grid_h), [grid_h, grid_w, 1])
+        col = np.tile(col, (1, 1, 3))
+        row = np.tile(row, (1, 1, 3))
 
         boxes1 = np.stack([(1.0 / (1.0 + np.exp(-1.0 * coordinate[:, :, :, 0])) + col) / grid_w,
                            (1.0 / (1.0 + np.exp(-1.0 * coordinate[:, :, :, 1])) + row) / grid_h,
                            np.exp(coordinate[:, :, :, 2]) * anchor[:, 0] / self.image_size,
                            np.exp(coordinate[:, :, :, 3]) * anchor[:, 1] / self.image_size])
-        coordinate = np.transpose(boxes1, (1, 2, 3, 0)) * self.image_size
+        coordinate = np.transpose(boxes1, (1, 2, 3, 0))
         confidence = 1.0 / (1.0 + np.exp(-1.0 * confidence))
         confidence = np.tile(np.expand_dims(confidence, axis = 3), (1, 1, 1, self.num_classes))
         classes = 1.0 / (1.0 + np.exp(-1.0 * classes))
+        #print(confidence[3, 3, 0, :])
+        #print(classes[3, 3, 0, :])
 
         box_scores = confidence * classes
+        #print(box_scores[3,3,0,:])
 
         box_classes = np.argmax(box_scores, axis = -1)
+        #print(np.shape(box_classes))
         box_score_max = np.max(box_scores, axis = -1)
+        #print(np.shape(box_score_max))
         filter_index = np.where(box_score_max >= self.threshold)
+        #print(filter_index)
 
         boxes_filter = coordinate[filter_index]
         probs_filter = box_score_max[filter_index]
@@ -94,7 +113,11 @@ class detector(object):
 
 
     def calc_object(self, boxes, probs, class_idx):
-        boxes = np.concatenate(boxes)
+        boxes_filter = np.concatenate(boxes)
+        probs_filter = np.concatenate(probs)
+        class_filter = np.concatenate(class_idx)
+
+        '''boxes = np.concatenate(boxes)
         probs = np.concatenate(probs)
         class_idx = np.concatenate(class_idx)
 
@@ -103,7 +126,7 @@ class detector(object):
             index = np.where(class_idx == c)
             boxes_filter = boxes[index]
             probs_filter = probs[index]
-            class_filter = class_idx[ind]
+            class_filter = class_idx[index]
             
             sort_num = np.array(np.argsort(probs_filter))[::-1]
             boxes_filter = boxes_filter[sort_num]
@@ -116,18 +139,29 @@ class detector(object):
                 for j in range(i+1, len(probs_filter)):
                     if self.calc_iou(boxes_filter[i], boxes_filter[j]) > 0.5:
                         probs_filter[j] = 0
-        
-            filter_probs = np.array(probs_filter > 0, dtype = 'bool')
-            boxes_filter = boxes_filter[filter_probs]
-            probs_filter = probs_filter[filter_probs]
-            class_filter = class_filter[filter_probs]
-            _boxes.append(boxes_filter)
+        '''
+        sort_num = np.array(np.argsort(probs_filter))[::-1]
+        boxes_filter = boxes_filter[sort_num]
+        probs_filter = probs_filter[sort_num]
+        class_filter = class_filter[sort_num]
+
+        for i in range(len(probs_filter)):
+            if probs_filter[i] == 0:
+                continue
+            for j in range(i + 1, len(probs_filter)):
+                if self.calc_iou(boxes_filter[i], boxes_filter[j]) > 0.5:
+                    probs_filter[j] = 0
+        filter_probs = np.array(probs_filter > 0, dtype='bool')
+        boxes_filter = boxes_filter[filter_probs]
+        probs_filter = probs_filter[filter_probs]
+        class_filter = class_filter[filter_probs]
+        '''_boxes.append(boxes_filter)
             _probs.append(probs_filter)
             _class_idx.append(class_filter)
 
         boxes_filter = np.concatenate(_boxes)
         probs_filter = np.concatenate(_probs)
-        class_filter = np.concatenate(_class_idx)
+        class_filter = np.concatenate(_class_idx)'''
         results = []
         for i in range(len(probs_filter)):
             results.append(self.classes[class_filter[i], boxes_filter[i][0], boxes_filter[i][1], boxes_filter[i][2], boxes_filter[i][3], probs_filter[i]])
