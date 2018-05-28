@@ -1,8 +1,8 @@
 # -*- coding:utf-8 -*-
 #
-#Created by lee
+# Created by lee
 #
-#2018-04-15
+# 2018-04-15
 
 import os
 import cv2
@@ -27,11 +27,11 @@ class Pascal_voc(object):
 
     def load_labels(self, model):
         if model == 'train':
-            self.devkil_path = os.path.join(self.pascal_voc, 'VOCdevkit')  # 文件路径
+            self.devkil_path = os.path.join(self.pascal_voc, 'VOCdevkit')
             self.data_path = os.path.join(self.devkil_path, 'VOC2007')
             txtname = os.path.join(self.data_path, 'ImageSets', 'Main', 'trainval.txt')
         if model == 'test':
-            self.devkil_path = os.path.join(self.pascal_voc, 'VOCdevkit-test')  # 文件路径
+            self.devkil_path = os.path.join(self.pascal_voc, 'VOCdevkit-test')
             self.data_path = os.path.join(self.devkil_path, 'VOC2007')
             txtname = os.path.join(self.data_path, 'ImageSets', 'Main', 'test.txt')
 
@@ -44,7 +44,7 @@ class Pascal_voc(object):
             if num == 0:
                 continue
             imagename = os.path.join(self.data_path, 'JPEGImages', ind + '.jpg')
-            labels.append({'imagename': imagename, 'label1': label[0], 'label2': label[1], 'label3': label[2]})
+            labels.append({'imagename': imagename, 'labels': label})
         np.random.shuffle(labels)
         return labels
 
@@ -55,7 +55,6 @@ class Pascal_voc(object):
         h_ratio = 1.0 * self.image_size / image.shape[0]
         w_ratio = 1.0 * self.image_size / image.shape[1]
 
-        #label = np.zeros([self.cell_size, self.cell_size, self.box_per_cell, 5 + self.num_classes])
         filename = os.path.join(self.data_path, 'Annotations', index + '.xml')
         tree = ET.parse(filename)
         objects = tree.findall('object')
@@ -63,7 +62,7 @@ class Pascal_voc(object):
         labels = []
         for i in range(0, 3):
             cell_size = self.cell_size * 2**i
-            label = np.zeros([cell_size, cell_size, self.box_per_cell, 5 + self.num_classes])
+            label = np.zeros([5])
             for obj in objects:
                 box = obj.find('bndbox')
                 x1 = max(min((float(box.find('xmin').text)) * w_ratio, self.image_size), 0)
@@ -71,18 +70,9 @@ class Pascal_voc(object):
                 x2 = max(min((float(box.find('xmax').text)) * w_ratio, self.image_size), 0)
                 y2 = max(min((float(box.find('ymax').text)) * h_ratio, self.image_size), 0)
                 class_ind = self.class_to_ind[obj.find('name').text.lower().strip()]
-                boxes = [0.5 * (x1 + x2), 0.5 * (y1 + y2), x2 - x1, y2 - y1]
-                cx = 1.0 * boxes[0] * cell_size / self.image_size
-                cy = 1.0 * boxes[1] * cell_size / self.image_size
-                #boxes[0] = cx - np.floor(cx)
-                #boxes[1] = cy - np.floor(cy)
-                xind = int(np.floor(cx))
-                yind = int(np.floor(cy))
-                # if label[boxes[4],: , 0] == 1:
-                #    continue
-                label[yind, xind, :, 0] = [1] * self.box_per_cell
-                label[yind, xind, :, 1:5] = [boxes[:4]] * self.box_per_cell
-                label[yind, xind, :, 5 + class_ind] = 1
+                boxes = [0.5 * (x1 + x2) / self.image_size, 0.5 * (y1 + y2) / self.image_size, np.sqrt((x2 - x1) / self.image_size), np.sqrt((y2 - y1) / self.image_size)]
+                label[0:4] = boxes
+                label[4] = 1
 
             labels.append(label)
 
@@ -91,47 +81,39 @@ class Pascal_voc(object):
 
     def next_batches(self, label):
         images = np.zeros([self.batch_size, self.image_size, self.image_size, 3])
-        label1 = np.zeros([self.batch_size, self.cell_size, self.cell_size, self.box_per_cell, 5 + self.num_classes])
-        label2 = np.zeros([self.batch_size, self.cell_size*2, self.cell_size*2, self.box_per_cell, 5 + self.num_classes])
-        label3 = np.zeros([self.batch_size, self.cell_size*4, self.cell_size*4, self.box_per_cell, 5 + self.num_classes])
+        labels = np.zeros([self.batch_size, 5])
         num = 0
         while num < self.batch_size:
             imagename = label[self.count]['imagename']
             images[num, :, :, :] = self.image_read(imagename)
-            label1[num, :, :, :, :] = label[self.count]['label1']
-            label2[num, :, :, :, :] = label[self.count]['label2']
-            label3[num, :, :, :, :] = label[self.count]['label3']
+            labels[num, :] = label[self.count]['labels']
             num += 1
             self.count += 1
             if self.count >= len(label):
                 np.random.shuffle(label)
                 self.count = 0
                 self.epoch += 1
-        return images, [label1, label2, label3]
+        return images, labels
 
 
     def next_batches_test(self, label):
         images = np.zeros([self.batch_size, self.image_size, self.image_size, 3])
-        label1 = np.zeros([self.batch_size, self.cell_size, self.cell_size, self.box_per_cell, 5 + self.num_classes])
-        label2 = np.zeros([self.batch_size, self.cell_size * 2, self.cell_size * 2, self.box_per_cell, 5 + self.num_classes])
-        label3 = np.zeros([self.batch_size, self.cell_size * 4, self.cell_size * 4, self.box_per_cell, 5 + self.num_classes])
+        labels = np.zeros([self.batch_size, 5])
         num = 0
         while num < self.batch_size:
             imagename = label[self.count_t]['imagename']
             images[num, :, :, :] = self.image_read(imagename)
-            label1[num, :, :, :, :] = label[self.count_t]['label1']
-            label2[num, :, :, :, :] = label[self.count_t]['label2']
-            label3[num, :, :, :, :] = label[self.count_t]['label3']
+            labels[num, :] = label[self.count_t]['labels']
             num += 1
             self.count_t += 1
             if self.count_t >= len(label):
                 self.count_t = 0
-        return images, [label1, label2, label3]
+        return images, labels
 
 
     def image_read(self, imagename):
         image = cv2.imread(imagename)
         image = cv2.resize(image, (self.image_size, self.image_size))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
-        image = image / 255.0# * 2.0 - 1.0
+        image = image / 255.0 * 2.0 - 1.0
         return image
